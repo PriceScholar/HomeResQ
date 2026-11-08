@@ -16,49 +16,43 @@ let activeSpeech=null;
 function tidyText(v){return String(v||'').replace(/[ \t]{2,}/g,' ').replace(/\s+([,.!?;:])/g,'$1').replace(/([,.!?;:])([^\s\n])/g,'$1 $2').replace(/(^|[.!?]\s+|\n)([a-z])/g,(all,sep,c)=>sep+c.toUpperCase()).trim()}
 function voiceControl(id){return SpeechAPI?'<button type="button" class="voice-btn" data-voice="'+id+'" title="Dictate into field" aria-label="Voice dictation">🎤</button>':''}
 function wireSmart(){
- document.querySelectorAll('[data-voice]').forEach(btn=>btn.onclick=async()=>{
+ document.querySelectorAll('[data-voice]').forEach(btn=>btn.onclick=()=>{
   const field=document.getElementById(btn.dataset.voice);
   if(!field)return;
-  if(!SpeechAPI){toast('Voice recognition is unavailable here. Use the microphone on your phone keyboard.',true);field.focus();return}
-  if(!window.isSecureContext){toast('Microphone requires HTTPS. Use the secure RESQHOME Office website.',true);return}
+  if(!SpeechAPI){field.focus();toast('Browser speech recognition is unavailable. Use the microphone key on your phone keyboard.',true);return}
+  if(!window.isSecureContext){toast('Voice input requires HTTPS. Open the secure Office URL.',true);return}
   if(activeSpeech){try{activeSpeech.abort()}catch{}activeSpeech=null}
   const r=new SpeechAPI();activeSpeech=r;
   r.lang='en-US';r.interimResults=false;r.maxAlternatives=1;r.continuous=false;
-  const finish=()=>{btn.classList.remove('listening');if(activeSpeech===r)activeSpeech=null};
-  btn.classList.add('listening');
+  // Start inside the original click event; waiting for permissions or language checks
+  // can lose browser user activation and break speech recognition.
+  btn.classList.add('listening');btn.setAttribute('aria-pressed','true');
+  let found=false;
+  const finish=()=>{btn.classList.remove('listening');btn.setAttribute('aria-pressed','false');if(activeSpeech===r)activeSpeech=null};
   r.onresult=event=>{
-   const heard=Array.from(event.results).map(x=>x[0].transcript).join(' ')
+   found=true;
+   const heard=Array.from(event.results).map(x=>x[0]?.transcript||'').join(' ')
     .replace(/\bcomma\b/gi,',').replace(/\b(full stop|period)\b/gi,'.')
     .replace(/\bquestion mark\b/gi,'?').replace(/\bnew line\b/gi,'\n');
    field.value=tidyText((field.value?field.value+' ':'')+heard);
    field.dispatchEvent(new Event('input',{bubbles:true}));
   };
-  r.onend=finish;
+  r.onend=()=>{finish();if(!found && !r._reportedError)toast('No words captured. Tap the mic, then speak clearly.',true)};
   r.onerror=event=>{
-   finish();
+   r._reportedError=true;finish();
    const hints={
-    'not-allowed':'Microphone permission denied. Allow microphone for this site in browser settings and retry.',
-    'service-not-allowed':'Browser speech service is blocked. Try Chrome/Edge or your keyboard microphone.',
-    'audio-capture':'No working microphone detected. Check your device microphone and browser permissions.',
-    'network':'Browser speech service needs a network connection and may be unavailable in your region. Try the keyboard microphone.',
-    'no-speech':'No speech detected. Speak after tapping the mic and retry.',
-    'language-not-supported':'English speech recognition is not supported by this browser.',
+    'not-allowed':'Microphone permission is denied. Allow it in your browser site settings, then retry.',
+    'service-not-allowed':'This browser blocks speech recognition. Try Chrome or Edge, or use the keyboard mic.',
+    'audio-capture':'No microphone detected. Check the device input and browser permission.',
+    'network':'Speech service connection failed. Browser speech may be unavailable on this network; use the keyboard microphone.',
+    'no-speech':'No speech detected. Tap the microphone and speak clearly.',
+    'language-not-supported':'English voice recognition is unavailable in this browser.',
     'aborted':null
    };
-   const msg=Object.prototype.hasOwnProperty.call(hints,event.error)?hints[event.error]:'Speech recognition failed ('+(event.error||'unknown')+'). Use the keyboard microphone.';
+   const msg=Object.prototype.hasOwnProperty.call(hints,event.error)?hints[event.error]:'Speech input error ('+(event.error||'unknown')+'). Try your keyboard microphone.';
    if(msg)toast(msg,true);
   };
-  // Chrome/Edge may use an online recognition service. On-device engines can be
-  // used only when supported and the needed language pack is installed.
-  try{
-   if(typeof SpeechAPI.available==='function'){
-    const status=await SpeechAPI.available({langs:['en-US'],processLocally:true});
-    if(activeSpeech!==r)return;
-    if(status==='available')r.processLocally=true;
-   }
-  }catch{}
-  if(activeSpeech!==r)return;
-  try{r.start()}catch(e){finish();toast('Could not start speech input: '+(e?.message||'Try the keyboard microphone.'),true)}
+  try{r.start()}catch(e){r._reportedError=true;finish();toast('Could not start microphone: '+(e?.message||'Try the keyboard microphone.'),true)}
  });
  document.querySelectorAll('input[type="text"],textarea').forEach(field=>{
   field.setAttribute('spellcheck','true');field.setAttribute('autocorrect','on');field.setAttribute('autocapitalize','sentences');
