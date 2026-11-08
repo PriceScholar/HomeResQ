@@ -3,6 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "description": "RESQHOME Office — cloud quotation and invoice management",
-  "scripts": {"dev": "next dev", "build": "next build", "start": "next start"},
-  "dependencies": {"next": "^16.0.0", "react": "^19.0.0", "react-dom": "^19.0.0", "@vercel/blob": "^2.0.0", "pdf-lib": "^1.17.1"}
+  "scripts": {
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "lint": "node --check lib/auth.js lib/pdf.js lib/store.js lib/blob-mock.js"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "pdf-lib": "^1.17.1"
+  }
 }

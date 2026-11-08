@@ -16,7 +16,8 @@ export default function Login(){
    <p style={{fontSize:13,lineHeight:1.6,color:'#73899e',marginBottom:28}}>Secure access to client records, quotations and invoices from mobile or desktop.</p>
    <form onSubmit={submit}>
     <label htmlFor="pwd" style={{fontSize:12,color:'#34516c',fontWeight:700}}>Office password</label>
-    <input id="pwd" type="password" value={password} onChange={e=>setPassword(e.target.value)} required autoComplete="current-password" placeholder="Enter password" style={{width:'100%',marginTop:9,padding:'14px 13px',border:'1px solid #cbdce8',borderRadius:9,outline:'none',fontSize:14}} />
+    <input id="pwd" type="password" value={password} onChange={e=>setPassword(e.target.value)} required autoComplete="current-password" placeholder="Enter password (default: admin12345678)" style={{width:'100%',marginTop:9,padding:'14px 13px',border:'1px solid #cbdce8',borderRadius:9,outline:'none',fontSize:14}} />
+    <p style={{color:'#627c95',fontSize:12,marginTop:6,marginBottom:0}}>Default password: <strong style={{color:'#1a3a5b',background:'#eaf2f8',padding:'2px 6px',borderRadius:4,fontFamily:'monospace'}}>admin12345678</strong></p>
     {error&&<p role="alert" style={{color:'#b53038',fontSize:12}}>{error}</p>}
     <button disabled={busy} style={{width:'100%',marginTop:17,padding:14,border:0,borderRadius:9,color:'white',fontWeight:800,background:'#215887',cursor:'pointer'}}>{busy?'Signing in…':'Sign in to RESQHOME Office →'}</button>
    </form>

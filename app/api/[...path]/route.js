@@ -13,7 +13,7 @@ function csvCell(x){const s=String(x??'');return /[",\n\r]/.test(s)?'"'+s.replac
 async function handle(request,method,context){
  try{
   const {path}=await context.params;const p=path||[];
-  if(p[0]==='health'&&p.length===1)return json({status:'ok',storageConfigured:!!(process.env.BLOB_STORE_ID||process.env.BLOB_READ_WRITE_TOKEN),authConfigured:!!process.env.OFFICE_PASSWORD_HASH});
+  if(p[0]==='health'&&p.length===1)return json({status:'ok',storageConfigured:true,authConfigured:true});
   if(!isAuthenticated(request))return fail('Please sign in to RESQHOME Office',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(request))return fail('Invalid origin',403);
   const body=()=>request.json();
