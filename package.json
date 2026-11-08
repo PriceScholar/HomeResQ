@@ -1,0 +1,8 @@
+{
+  "name": "resqhome-office-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RESQHOME Office — cloud quotation and invoice management",
+  "scripts": {"dev": "next dev", "build": "next build", "start": "next start"},
+  "dependencies": {"next": "^16.0.0", "react": "^19.0.0", "react-dom": "^19.0.0", "@vercel/blob": "^2.0.0", "pdf-lib": "^1.17.1"}
+}
