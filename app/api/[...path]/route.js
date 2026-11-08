@@ -1,13 +1,13 @@
 import {NextResponse} from 'next/server';
 import {isAuthenticated,checkOrigin} from '../../../lib/auth';
-import {bootstrap,defaults,readSettings,saveRecord,fetchRecord,listRecords,deleteRecord,nextNumber,validateDoc,totals} from '../../../lib/store';
+import {bootstrap,defaults,readSettings,saveRecord,fetchRecord,listRecords,deleteRecord,nextNumber,validateDoc,totals,validateExpense,validatePayment} from '../../../lib/store';
 import {pdfBytes} from '../../../lib/pdf';
 import {randomUUID} from 'node:crypto';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 function json(x,code=200){return NextResponse.json(x,{status:code,headers:{'Cache-Control':'no-store'}})}
 const fail=(message,code=400)=>json({detail:message},code);
-function isSafeId(id){return /^[0-9a-f-]{36}$/i.test(id||'')}
+function isSafeId(id){return /^[0-9a-zA-Z_-]{8,64}$/.test(id||'')}
 function errorResponse(e){console.error('RESQHOME API:',e); const m=String(e?.message||e);return fail(m.includes('BLOB')||m.includes('token')||m.includes('store')?'Cloud storage is not connected. Check Vercel Storage settings.':m, /not found/i.test(m)?404:500)}
 function csvCell(x){const s=String(x??'');return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 async function handle(request,method,context){
@@ -35,6 +35,11 @@ async function handle(request,method,context){
       return json(await saveRecord('documents',old.id,{...old,...d,number:old.number,total:totals(d).total,updated_at:when()}));
     }
     if(p.length===2&&method==='DELETE'){await deleteRecord('documents',old.id);return json({success:true})}
+    if(p[2]==='confirm-job'&&method==='POST'){
+      if(old.type!=='invoice')return fail('Only invoices can be confirmed as jobs',422);
+      const updated={...old,job_status:'confirmed',confirmed_at:when(),updated_at:when()};
+      return json(await saveRecord('documents',old.id,updated));
+    }
     if(p[2]==='convert'&&method==='POST'){
      if(old.type!=='quotation')return fail('Only quotations can convert to invoices',422);
      const bankSettings=await readSettings();const invoiceBank=Object.fromEntries(['bank_payable_to','bank_name','bank_branch','bank_account_number','bank_iban','bank_swift_code'].map(k=>[k,String(bankSettings[k]??'')]));
@@ -45,6 +50,32 @@ async function handle(request,method,context){
      const settings=await readSettings();const bytes=await pdfBytes(old,settings);
      return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':`inline; filename="${old.number}.pdf"`,'Cache-Control':'private, no-store'}})
     }
+   }
+  }
+  if(p[0]==='expenses'){
+   if(p.length===1&&method==='GET')return json(await listRecords('expenses'));
+   if(p.length===1&&method==='POST'){
+    const exp=validateExpense(await body());const id=randomUUID(),stamp=when();
+    const r={...exp,id,created_at:stamp,updated_at:stamp};return json(await saveRecord('expenses',id,r),201);
+   }
+   if(p.length===2){
+    if(!isSafeId(p[1]))return fail('Invalid expense ID');const old=await fetchRecord('expenses',p[1]);if(!old)return fail('Expense not found',404);
+    if(method==='GET')return json(old);
+    if(method==='PUT'){const exp=validateExpense(await body());const updated={...old,...exp,id:old.id,updated_at:when()};return json(await saveRecord('expenses',old.id,updated))}
+    if(method==='DELETE'){await deleteRecord('expenses',old.id);return json({success:true})}
+   }
+  }
+  if(p[0]==='payments'){
+   if(p.length===1&&method==='GET')return json(await listRecords('payments'));
+   if(p.length===1&&method==='POST'){
+    const pay=validatePayment(await body());const id=randomUUID(),stamp=when();
+    const r={...pay,id,created_at:stamp,updated_at:stamp};return json(await saveRecord('payments',id,r),201);
+   }
+   if(p.length===2){
+    if(!isSafeId(p[1]))return fail('Invalid payment ID');const old=await fetchRecord('payments',p[1]);if(!old)return fail('Payment not found',404);
+    if(method==='GET')return json(old);
+    if(method==='PUT'){const pay=validatePayment(await body());const updated={...old,...pay,id:old.id,updated_at:when()};return json(await saveRecord('payments',old.id,updated))}
+    if(method==='DELETE'){await deleteRecord('payments',old.id);return json({success:true})}
    }
   }
   if(p[0]==='clients'){
@@ -75,9 +106,11 @@ async function handle(request,method,context){
    for(const row of validDocs)await saveRecord('documents',row.id,row);
    for(const row of validClients)await saveRecord('clients',row.id,row);
    await saveRecord('settings','company',{...defaults,...(b.settings||{})});
+   if(Array.isArray(b.expenses)){for(const row of b.expenses){if(isSafeId(row.id))await saveRecord('expenses',row.id,row)}}
+   if(Array.isArray(b.payments)){for(const row of b.payments){if(isSafeId(row.id))await saveRecord('payments',row.id,row)}}
    for(const row of existing.documents){if(!validDocs.some(d=>d.id===row.id))await deleteRecord('documents',row.id)}
    for(const row of existing.clients){if(!validClients.some(d=>d.id===row.id))await deleteRecord('clients',row.id)}
-   return json({success:true,documents:validDocs.length,clients:validClients.length});
+   return json({success:true,documents:validDocs.length,clients:validClients.length,expenses:Array.isArray(b.expenses)?b.expenses.length:0,payments:Array.isArray(b.payments)?b.payments.length:0});
   }
   if(p[0]==='export'&&p[1]==='csv'&&method==='GET'){
    const docs=await listRecords('documents');const head=['Number','Type','Status','Issue Date','Client','Project','Subtotal (AED)','VAT (AED)','Total (AED)'];

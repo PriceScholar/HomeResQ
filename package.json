@@ -7,7 +7,7 @@
     "dev": "next dev -p 3000 -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "node --check lib/auth.js lib/pdf.js lib/store.js lib/blob-mock.js"
+    "lint": "node --check lib/auth.js lib/pdf.js lib/store.js lib/blob-mock.js lib/profit.js"
   },
   "dependencies": {
     "next": "^16.0.0",
