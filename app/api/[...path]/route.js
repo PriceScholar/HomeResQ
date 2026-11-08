@@ -37,7 +37,8 @@ async function handle(request,method,context){
     if(p.length===2&&method==='DELETE'){await deleteRecord('documents',old.id);return json({success:true})}
     if(p[2]==='convert'&&method==='POST'){
      if(old.type!=='quotation')return fail('Only quotations can convert to invoices',422);
-     const newdoc={...old,id:randomUUID(),type:'invoice',status:'draft',issue_date:new Date().toISOString().slice(0,10),created_at:when(),updated_at:when(),origin_id:old.id};
+     const bankSettings=await readSettings();const invoiceBank=Object.fromEntries(['bank_payable_to','bank_name','bank_branch','bank_account_number','bank_iban','bank_swift_code'].map(k=>[k,String(bankSettings[k]??'')]));
+     const newdoc={...old,...invoiceBank,id:randomUUID(),type:'invoice',status:'draft',issue_date:new Date().toISOString().slice(0,10),created_at:when(),updated_at:when(),origin_id:old.id};
      newdoc.number=await nextNumber('invoice'); return json(await saveRecord('documents',newdoc.id,newdoc),201);
     }
     if(p[2]==='pdf'&&method==='GET'){
