@@ -69,7 +69,7 @@ async function handle(request,method,context){
    // Preserve current records as a pre-restore snapshot before any mutation. Stored privately.
    const snapshot=await bootstrap();await saveRecord('snapshots',randomUUID(),{...snapshot,created_at:when(),reason:'pre-restore'});
    const existing=await bootstrap();
-   const validDocs=b.documents.map(x=>{if(!isSafeId(x.id)||!/^RQ-(INV|QT)-\d{4}-\d{4,}$/.test(x.number))throw Error('Invalid backup document');const d=validateDoc(x);return {...x,...d,total:totals(d).total}});
+   const validDocs=b.documents.map(x=>{if(!isSafeId(x.id)||!/^RQ-(INV|QT)-\d{4}-\d{3,}$/.test(x.number))throw Error('Invalid backup document');const d=validateDoc(x);return {...x,...d,total:totals(d).total}});
    const validClients=b.clients.map(x=>{if(!isSafeId(x.id)||!String(x.name||'').trim())throw Error('Invalid backup client');return x});
    for(const row of validDocs)await saveRecord('documents',row.id,row);
    for(const row of validClients)await saveRecord('clients',row.id,row);

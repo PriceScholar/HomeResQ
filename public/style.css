@@ -123,3 +123,11 @@
  .mobile-savebar{padding-left:10px;padding-right:10px}
  .mobile-savebar .btn{padding:10px;font-size:11px}
 }
+
+
+/* Scoped smart editor controls; previous desktop/mobile styling preserved */
+.smart-control{position:relative;display:flex;align-items:stretch;width:100%}
+.smart-control input,.smart-control textarea{width:100%;padding-right:51px!important}
+.voice-btn{position:absolute;right:7px;top:7px;width:34px;height:34px;min-width:34px;display:flex;align-items:center;justify-content:center;border:1px solid #bcd0e0;border-radius:9px;background:#f3f8fc;color:#163251;font-size:16px;cursor:pointer;z-index:2}
+.voice-btn:hover,.voice-btn.listening{background:#d6ecfa;border-color:#5599c4}
+@media(max-width:767px){.voice-btn{width:40px;height:40px;right:5px;top:4px}.doc-table td:nth-child(6){flex-wrap:wrap}}
