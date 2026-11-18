@@ -1,4 +1,5 @@
-import {NextResponse} from 'next/server';
+import {NextResponse,after} from 'next/server';
+import {syncDocumentToGoogle,syncExpenseToGoogle,syncCompanyExpenseReport} from '../../../lib/drive-sync';
 import {isAuthenticated,checkOrigin} from '../../../lib/auth';
 import {invoiceBankDefaults,bootstrap,defaults,readSettings,saveRecord,fetchRecord,listRecords,deleteRecord,nextNumber,validateDoc,totals,validateExpense,validatePayment} from '../../../lib/store';
 import {pdfBytes} from '../../../lib/pdf';
@@ -7,6 +8,9 @@ export const runtime='nodejs';
 export const dynamic='force-dynamic';
 function json(x,code=200){return NextResponse.json(x,{status:code,headers:{'Cache-Control':'no-store'}})}
 const fail=(message,code=400)=>json({detail:message},code);
+// Drive copies are best-effort: they never prevent a successful local save.
+function scheduleDrive(work){after(async()=>{try{await work()}catch(err){console.error('Google Drive sync pending:',String(err?.message||err).slice(0,200))}})}
+function scheduleInvoiceReport(id){scheduleDrive(async()=>{await syncExpenseToGoogle(id);await syncCompanyExpenseReport()})}
 function isSafeId(id){return /^[0-9a-zA-Z_-]{8,64}$/.test(id||'')}
 function errorResponse(e){console.error('RESQHOME API:',e); const m=String(e?.message||e);return fail(m.includes('BLOB')||m.includes('token')||m.includes('store')?'Cloud storage is not connected. Check Vercel Storage settings.':m, /not found/i.test(m)?404:500)}
 function csvCell(x){const s=String(x??'');return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
@@ -24,7 +28,7 @@ async function handle(request,method,context){
    if(p.length===1&&method==='POST'){
     const d=validateDoc(await body());const id=randomUUID();const stamp=when();
     const r={...d,id,number:await nextNumber(d.type),total:totals(d).total,origin_id:null,created_at:stamp,updated_at:stamp};
-    return json(await saveRecord('documents',id,r),201);
+    const saved=await saveRecord('documents',id,r);scheduleDrive(()=>syncDocumentToGoogle(saved));if(saved.type==='invoice')scheduleInvoiceReport(saved.id);return json(saved,201);
    }
    if(p.length>=2){
     if(!isSafeId(p[1]))return fail('Invalid document ID');
@@ -32,9 +36,9 @@ async function handle(request,method,context){
     if(p.length===2&&method==='GET')return json(old);
     if(p.length===2&&method==='PUT'){
       const d=validateDoc(await body());if(d.type!==old.type)return fail('Document type cannot change',422);
-      return json(await saveRecord('documents',old.id,{...old,...d,number:old.number,total:totals(d).total,updated_at:when()}));
+      const saved=await saveRecord('documents',old.id,{...old,...d,number:old.number,total:totals(d).total,updated_at:when()});scheduleDrive(()=>syncDocumentToGoogle(saved));if(saved.type==='invoice')scheduleInvoiceReport(saved.id);return json(saved);
     }
-    if(p.length===2&&method==='DELETE'){await deleteRecord('documents',old.id);return json({success:true})}
+    if(p.length===2&&method==='DELETE'){await deleteRecord('documents',old.id);if(old.type==='invoice')scheduleDrive(()=>syncCompanyExpenseReport());return json({success:true})}
     if(p[2]==='confirm-job'&&method==='POST'){
       if(old.type!=='invoice')return fail('Only invoices can be confirmed as jobs',422);
       const updated={...old,job_status:'confirmed',confirmed_at:when(),updated_at:when()};
@@ -44,7 +48,7 @@ async function handle(request,method,context){
      if(old.type!=='quotation')return fail('Only quotations can convert to invoices',422);
      const invoiceBank={...invoiceBankDefaults};
      const newdoc={...old,...invoiceBank,id:randomUUID(),type:'invoice',status:'draft',issue_date:new Date().toISOString().slice(0,10),created_at:when(),updated_at:when(),origin_id:old.id};
-     newdoc.number=await nextNumber('invoice'); return json(await saveRecord('documents',newdoc.id,newdoc),201);
+     newdoc.number=await nextNumber('invoice');const converted=await saveRecord('documents',newdoc.id,newdoc);scheduleDrive(()=>syncDocumentToGoogle(converted));scheduleInvoiceReport(converted.id);return json(converted,201);
     }
     if(p[2]==='pdf'&&method==='GET'){
      const settings=await readSettings();const bytes=await pdfBytes(old,settings);
@@ -56,26 +60,26 @@ async function handle(request,method,context){
    if(p.length===1&&method==='GET')return json(await listRecords('expenses'));
    if(p.length===1&&method==='POST'){
     const exp=validateExpense(await body());const id=randomUUID(),stamp=when();
-    const r={...exp,id,created_at:stamp,updated_at:stamp};return json(await saveRecord('expenses',id,r),201);
+    const r={...exp,id,created_at:stamp,updated_at:stamp};const saved=await saveRecord('expenses',id,r);scheduleInvoiceReport(saved.invoice_id);return json(saved,201);
    }
    if(p.length===2){
     if(!isSafeId(p[1]))return fail('Invalid expense ID');const old=await fetchRecord('expenses',p[1]);if(!old)return fail('Expense not found',404);
     if(method==='GET')return json(old);
-    if(method==='PUT'){const exp=validateExpense(await body());const updated={...old,...exp,id:old.id,updated_at:when()};return json(await saveRecord('expenses',old.id,updated))}
-    if(method==='DELETE'){await deleteRecord('expenses',old.id);return json({success:true})}
+    if(method==='PUT'){const exp=validateExpense(await body());const updated={...old,...exp,id:old.id,updated_at:when()};const saved=await saveRecord('expenses',old.id,updated);scheduleInvoiceReport(saved.invoice_id);return json(saved)}
+    if(method==='DELETE'){await deleteRecord('expenses',old.id);scheduleInvoiceReport(old.invoice_id);return json({success:true})}
    }
   }
   if(p[0]==='payments'){
    if(p.length===1&&method==='GET')return json(await listRecords('payments'));
    if(p.length===1&&method==='POST'){
     const pay=validatePayment(await body());const id=randomUUID(),stamp=when();
-    const r={...pay,id,created_at:stamp,updated_at:stamp};return json(await saveRecord('payments',id,r),201);
+    const r={...pay,id,created_at:stamp,updated_at:stamp};const saved=await saveRecord('payments',id,r);scheduleInvoiceReport(saved.invoice_id);return json(saved,201);
    }
    if(p.length===2){
     if(!isSafeId(p[1]))return fail('Invalid payment ID');const old=await fetchRecord('payments',p[1]);if(!old)return fail('Payment not found',404);
     if(method==='GET')return json(old);
-    if(method==='PUT'){const pay=validatePayment(await body());const updated={...old,...pay,id:old.id,updated_at:when()};return json(await saveRecord('payments',old.id,updated))}
-    if(method==='DELETE'){await deleteRecord('payments',old.id);return json({success:true})}
+    if(method==='PUT'){const pay=validatePayment(await body());const updated={...old,...pay,id:old.id,updated_at:when()};const saved=await saveRecord('payments',old.id,updated);scheduleInvoiceReport(saved.invoice_id);return json(saved)}
+    if(method==='DELETE'){await deleteRecord('payments',old.id);scheduleInvoiceReport(old.invoice_id);return json({success:true})}
    }
   }
   if(p[0]==='clients'){
