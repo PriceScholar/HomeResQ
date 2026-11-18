@@ -6,9 +6,9 @@ export async function POST(request){
   if(!checkOrigin(request))return NextResponse.json({detail:'Invalid request origin'}, {status:403});
   const {password} = await request.json().catch(()=>({}));
   if(!await verifyPassword(String(password||'')))return NextResponse.json({detail:'Incorrect password'}, {status:401});
-  return setAuthCookie(NextResponse.json({ok:true}),makeSession());
+  return setAuthCookie(NextResponse.json({ok:true}),makeSession(),request);
 }
-export async function DELETE(request){if(!checkOrigin(request))return NextResponse.json({detail:'Invalid request origin'},{status:403});return clearAuthCookie(NextResponse.json({ok:true}));}
+export async function DELETE(request){if(!checkOrigin(request))return NextResponse.json({detail:'Invalid request origin'},{status:403});return clearAuthCookie(NextResponse.json({ok:true}),request);}
 
 export async function PATCH(request){
  if(!checkOrigin(request)||!isAuthenticated(request))return NextResponse.json({detail:'Unauthorized'},{status:401});
