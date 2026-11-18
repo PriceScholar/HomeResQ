@@ -93,10 +93,19 @@ export async function googleDriveSignIn() {
     emit();
     return { ...driveState, accessToken: cachedAccessToken };
   } catch (err) {
-    const msg =
-      err?.code === 'auth/popup-closed-by-user'
-        ? 'Google sign-in popup was closed before completing.'
-        : err?.message || 'Google Drive sign-in failed';
+    const host = typeof window !== 'undefined' ? window.location.hostname : '';
+    let msg = err?.message || 'Google Drive sign-in failed';
+    if (err?.code === 'auth/unauthorized-domain') {
+      msg = host
+        ? `Domain "${host}" is not authorized for Google Sign-In. Add "${host}" in Firebase Console (${firebaseConfig.projectId}) → Authentication → Settings → Authorized domains, then retry.`
+        : `This domain is not authorized for Google Sign-In. Add it in Firebase Console (${firebaseConfig.projectId}) → Authentication → Settings → Authorized domains, then retry.`;
+    } else if (err?.code === 'auth/popup-closed-by-user') {
+      msg = 'Google sign-in popup was closed before completing.';
+    } else if (err?.code === 'auth/popup-blocked') {
+      msg = 'Sign-in popup was blocked by your browser. Allow popups for this site and try again.';
+    } else if (err?.code === 'auth/cancelled-popup-request') {
+      msg = 'Another sign-in popup is already open. Complete or close it and try again.';
+    }
     driveState = {
       ...driveState,
       ready: true,
