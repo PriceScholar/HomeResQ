@@ -34,7 +34,15 @@ async function handle(request,method,context){
       const d=validateDoc(await body());if(d.type!==old.type)return fail('Document type cannot change',422);
       const saved=await saveRecord('documents',old.id,{...old,...d,number:old.number,total:totals(d).total,updated_at:when()});return json(saved);
     }
-    if(p.length===2&&method==='DELETE'){await deleteRecord('documents',old.id);return json({success:true})}
+    if(p.length===2&&method==='DELETE'){
+     await deleteRecord('documents',old.id);
+     if(old.type==='invoice'){
+      const [exps,pays]=await Promise.all([listRecords('expenses'),listRecords('payments')]);
+      for(const e of exps){if(e.invoice_id===old.id)await deleteRecord('expenses',e.id);}
+      for(const pay of pays){if(pay.invoice_id===old.id)await deleteRecord('payments',pay.id);}
+     }
+     return json({success:true});
+    }
     if(p[2]==='confirm-job'&&method==='POST'){
       if(old.type!=='invoice')return fail('Only invoices can be confirmed as jobs',422);
       const updated={...old,job_status:'confirmed',confirmed_at:when(),updated_at:when()};
@@ -48,7 +56,10 @@ async function handle(request,method,context){
     }
     if(p[2]==='pdf'&&method==='GET'){
      const settings=await readSettings();const bytes=await pdfBytes(old,settings);
-     return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':`inline; filename="${old.number}.pdf"`,'Cache-Control':'private, no-store'}})
+     const buf=Buffer.from(bytes);
+     const isDownload=request.nextUrl?.searchParams?.get('download')==='1';
+     const safeName=String(old.number||'document').replace(/[^a-zA-Z0-9._-]/g,'_');
+     return new Response(buf,{headers:{'Content-Type':'application/pdf','Content-Length':String(buf.length),'Content-Disposition':`${isDownload?'attachment':'inline'}; filename="${safeName}.pdf"`,'Cache-Control':'private, no-store'}})
     }
    }
   }
@@ -85,7 +96,7 @@ async function handle(request,method,context){
     const id=randomUUID(),stamp=when();const r={id,name:String(val.name).trim().slice(0,200),email:String(val.email||''),phone:String(val.phone||''),address:String(val.address||''),created_at:stamp,updated_at:stamp};return json(await saveRecord('clients',id,r),201)
    }
    if(p.length===2){if(!isSafeId(p[1]))return fail('Invalid client ID');const old=await fetchRecord('clients',p[1]);if(!old)return fail('Client not found',404);
-    if(method==='PUT'){const v=await body();if(!String(v.name||'').trim())return fail('Client name required',422);await saveRecord('clients',old.id,{...old,name:String(v.name),phone:String(v.phone||''),email:String(v.email||''),address:String(v.address||''),updated_at:when()});return json({success:true})}
+    if(method==='PUT'){const v=await body();if(!String(v.name||'').trim())return fail('Client name required',422);await saveRecord('clients',old.id,{...old,name:String(v.name).trim().slice(0,200),phone:String(v.phone||''),email:String(v.email||''),address:String(v.address||''),updated_at:when()});return json({success:true})}
     if(method==='DELETE'){await deleteRecord('clients',old.id);return json({success:true})}
    }
   }
@@ -108,8 +119,12 @@ async function handle(request,method,context){
    await saveRecord('settings','company',{...defaults,...(b.settings||{})});
    if(Array.isArray(b.expenses)){for(const row of b.expenses){if(isSafeId(row.id))await saveRecord('expenses',row.id,row)}}
    if(Array.isArray(b.payments)){for(const row of b.payments){if(isSafeId(row.id))await saveRecord('payments',row.id,row)}}
+   const validExpIds=new Set(Array.isArray(b.expenses)?b.expenses.filter(x=>isSafeId(x?.id)).map(x=>x.id):[]);
+   const validPayIds=new Set(Array.isArray(b.payments)?b.payments.filter(x=>isSafeId(x?.id)).map(x=>x.id):[]);
    for(const row of existing.documents){if(!validDocs.some(d=>d.id===row.id))await deleteRecord('documents',row.id)}
    for(const row of existing.clients){if(!validClients.some(d=>d.id===row.id))await deleteRecord('clients',row.id)}
+   for(const row of existing.expenses||[]){if(!validExpIds.has(row.id))await deleteRecord('expenses',row.id)}
+   for(const row of existing.payments||[]){if(!validPayIds.has(row.id))await deleteRecord('payments',row.id)}
    return json({success:true,documents:validDocs.length,clients:validClients.length,expenses:Array.isArray(b.expenses)?b.expenses.length:0,payments:Array.isArray(b.payments)?b.payments.length:0});
   }
   if(p[0]==='export'&&p[1]==='csv'&&method==='GET'){
