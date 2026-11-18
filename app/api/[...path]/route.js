@@ -1,6 +1,6 @@
 import {NextResponse} from 'next/server';
 import {isAuthenticated,checkOrigin} from '../../../lib/auth';
-import {invoiceBankDefaults,bootstrap,defaults,readSettings,saveRecord,fetchRecord,listRecords,deleteRecord,nextNumber,validateDoc,totals,validateExpense,validatePayment} from '../../../lib/store';
+import {invoiceBankDefaults,bootstrap,defaults,readSettings,saveRecord,fetchRecord,listRecords,deleteRecord,nextNumber,validateDoc,totals,validateExpense,validatePayment,restoreIssuedNumber} from '../../../lib/store';
 import {pdfBytes} from '../../../lib/pdf';
 import {randomUUID} from 'node:crypto';
 export const runtime='nodejs';
@@ -109,9 +109,9 @@ async function handle(request,method,context){
   }
   if(p[0]==='restore'&&method==='POST'){
    const b=await body();if(b?.format!=='RESQHOME_OFFICE_BACKUP_V1'||!Array.isArray(b.documents)||!Array.isArray(b.clients)||b.documents.length>3000||b.clients.length>3000)return fail('Invalid or excessive backup',422);
-   // Preserve current records as a pre-restore snapshot before any mutation. Stored privately.
-   const snapshot=await bootstrap();await saveRecord('snapshots',randomUUID(),{...snapshot,created_at:when(),reason:'pre-restore'});
+   // Preserve current records as a pre-restore snapshot before user-initiated restores.
    const existing=await bootstrap();
+   if(!b.silent_sync){await saveRecord('snapshots',randomUUID(),{...existing,created_at:when(),reason:'pre-restore'});}
    const validDocs=b.documents.map(x=>{if(!isSafeId(x.id)||!/^RQ-(INV|QT)-\d{4}-\d{3,}$/.test(x.number))throw Error('Invalid backup document');const d=validateDoc(x);return {...x,...d,total:totals(d).total}});
    const validClients=b.clients.map(x=>{if(!isSafeId(x.id)||!String(x.name||'').trim())throw Error('Invalid backup client');return x});
    for(const row of validDocs)await saveRecord('documents',row.id,row);
@@ -119,12 +119,14 @@ async function handle(request,method,context){
    await saveRecord('settings','company',{...defaults,...(b.settings||{})});
    if(Array.isArray(b.expenses)){for(const row of b.expenses){if(isSafeId(row.id))await saveRecord('expenses',row.id,row)}}
    if(Array.isArray(b.payments)){for(const row of b.payments){if(isSafeId(row.id))await saveRecord('payments',row.id,row)}}
+   if(Array.isArray(b.issued_numbers)){for(const entry of b.issued_numbers){await restoreIssuedNumber(entry);}}
    const validExpIds=new Set(Array.isArray(b.expenses)?b.expenses.filter(x=>isSafeId(x?.id)).map(x=>x.id):[]);
    const validPayIds=new Set(Array.isArray(b.payments)?b.payments.filter(x=>isSafeId(x?.id)).map(x=>x.id):[]);
    for(const row of existing.documents){if(!validDocs.some(d=>d.id===row.id))await deleteRecord('documents',row.id)}
    for(const row of existing.clients){if(!validClients.some(d=>d.id===row.id))await deleteRecord('clients',row.id)}
    for(const row of existing.expenses||[]){if(!validExpIds.has(row.id))await deleteRecord('expenses',row.id)}
    for(const row of existing.payments||[]){if(!validPayIds.has(row.id))await deleteRecord('payments',row.id)}
+   await saveRecord('meta','state',{mutated:true,updated_at:when()});
    return json({success:true,documents:validDocs.length,clients:validClients.length,expenses:Array.isArray(b.expenses)?b.expenses.length:0,payments:Array.isArray(b.payments)?b.payments.length:0});
   }
   if(p[0]==='export'&&p[1]==='csv'&&method==='GET'){
